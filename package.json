@@ -1,0 +1,19 @@
+{
+  "name": "i18n-scanner",
+  "version": "1.0.0",
+  "description": "i18n scan",
+  "main": "./app/index.js",
+  "scripts": {
+    "start": "node ./app/index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@babel/parser": "^7.10.5",
+    "@babel/traverse": "^7.10.5",
+    "glob": "^7.1.6",
+    "i18next-scanner": "^2.11.0",
+    "lodash": "^4.17.19",
+    "typescript": "^3.9.7"
+  }
+}
