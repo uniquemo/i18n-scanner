@@ -36,6 +36,21 @@ const i18nFnWrapperGenerator = (source = {}) => {
   const replaceString = `${left}${callStatement}('${message}')${right}`;
   let chinese = message.replace(/\\"/g, '"');
 
+  // 判断是否已经用i18n函数包裹了
+  const v1 = replace(arr[line - 1], `${callStatement}('${message}')`, '!!!')
+  const v2 = replace(arr[line], `${callStatement}('${message}')`, '!!!')
+  if (temp1 !== v1 || temp2 !== v2) {
+    let result = arr.join('\n');
+
+    fs.writeFileSync(filename, result, 'utf8');
+
+    if (arr.indexOf(importStatement) === -1) {
+      // 代表是否需要在头部引入 i18next
+      return true;
+    }
+    return
+  }
+
   // 这里是为了匹配前后如果有引号的情况
   arr[line - 1] = replace(arr[line - 1], `"${chinese}"`, replaceString);
   if (temp1 === arr[line - 1]) {

@@ -168,7 +168,7 @@ start()
   .then(() => {
     const needImport = [];
 
-    // 替换中文文案, 将文案中i18方法包裹
+    // 替换中文文案, 将文案用i18n方法包裹
     textMap.forEach((item) => {
       item.source.forEach((src) => {
         const [filename, line, column] = src.location.split('#')
