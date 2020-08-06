@@ -17,14 +17,14 @@ const { JSX, TEMPLATE, STRING, JSX_ATTRIBUTE, CALL_EXPRESSION } = NODE_TYPE
 process.chdir(configHandler().chdir)
 
 /**
- * texts: ['text#type#filePath#row#col']
+ * texts: ['text#type#filePath#lineStart#lineEnd#colStart']
  * textMap: {
  *   text: {
  *     message: text,
  *     source: [
  *       {
  *         type,
- *         location: 'filePath#row#col',
+ *         location: 'filePath#lineStart#lineEnd#colStart',
  *         isWrapped: true/false
  *       }
  *     ]
@@ -75,7 +75,7 @@ class I18nScanner {
   
     if (!hasCNChar(val)) return
 
-    val = val.trim()
+    val = val.trim().replace(/\n\s*/g, ' ')
     const location = genNodeLocation(node, filePath)
     const sourceText = `${val}#${type}#${location}`
     let isExisted = false
@@ -191,10 +191,11 @@ class I18nScanner {
     // 将文案用i18n方法包裹
     this.textMap.forEach((item) => {
       item.source.forEach((src) => {
-        const [filePath, line, column] = src.location.split('#')
+        const [filePath, lineStart, lineEnd, column] = src.location.split('#')
         const shouldImport = i18nFnWrapperGenerator({
           filePath,
-          line,
+          lineStart,
+          lineEnd,
           column,
           message: item.message,
           type: src.type,

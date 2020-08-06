@@ -7,11 +7,10 @@ const get = require('lodash/get')
  * @param {*} filePath 文件路径
  */
 const genNodeLocation = (node, filePath) => {
-  const locStart = get(node, ['loc', 'start', 'line'], '!!!')
-  const locEnd = get(node, ['loc', 'end', 'line'], '!!!')
-  const realLine = locStart === locEnd ? locStart : Math.ceil((locStart + locEnd) / 2)
-  const locCol = get(node, ['loc', 'start', 'column'], '!!!')
-  const location = `${path.join(process.cwd(), filePath)}#${realLine}#${locCol}`
+  const lineStart = get(node, ['loc', 'start', 'line'], '!!!')
+  const lineEnd = get(node, ['loc', 'end', 'line'], '!!!')
+  const colStart = get(node, ['loc', 'start', 'column'], '!!!')
+  const location = `${path.join(process.cwd(), filePath)}#${lineStart}#${lineEnd}#${colStart}`
 
   return location
 }

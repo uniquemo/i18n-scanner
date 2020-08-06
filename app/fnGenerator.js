@@ -8,7 +8,8 @@ const replace = (lineText, chinese, replaceString) => {
 const i18nFnWrapperGenerator = (source = {}) => {
   const {
     type,
-    line,
+    lineStart,
+    lineEnd,
     message,
     filePath,
     isWrapped,
@@ -27,7 +28,11 @@ const i18nFnWrapperGenerator = (source = {}) => {
   const content = fs.readFileSync(filePath, 'utf-8')
   const arr = content.split('\n')
 
-  const temp = arr[line - 1]
+  // 将多行文本转换成单行
+  const temp = arr.slice(lineStart - 1, lineEnd).join('\n').replace(/\n\s*/g, ' ')
+  arr.splice(lineStart - 1, lineEnd - lineStart + 1)
+  arr.splice(lineStart - 1, 0, temp)
+
   const replaceString = `${left}${callStatement}('${message}')${right}`
   let chinese = message.replace(/\\"/g, '"')
 
@@ -47,12 +52,12 @@ const i18nFnWrapperGenerator = (source = {}) => {
   }
 
   // 匹配前后如果有引号的情况
-  arr[line - 1] = replace(arr[line - 1], `"${chinese}"`, replaceString)
-  if (temp === arr[line - 1]) {
-    arr[line - 1] = replace(arr[line - 1], `'${chinese}'`, replaceString)
-    if (temp === arr[line - 1]) {
-      arr[line - 1] = replace(arr[line - 1], chinese, replaceString)
-      if (temp === arr[line - 1] && arr[line - 1].indexOf(message) !== -1) {
+  arr[lineStart - 1] = replace(arr[lineStart - 1], `"${chinese}"`, replaceString)
+  if (temp === arr[lineStart - 1]) {
+    arr[lineStart - 1] = replace(arr[lineStart - 1], `'${chinese}'`, replaceString)
+    if (temp === arr[lineStart - 1]) {
+      arr[lineStart - 1] = replace(arr[lineStart - 1], chinese, replaceString)
+      if (temp === arr[lineStart - 1] && arr[lineStart - 1].indexOf(message) !== -1) {
         console.log('失败，请手动替换', JSON.stringify(source, null, 2))
         return false
       }
