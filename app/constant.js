@@ -1,10 +1,11 @@
-const defaultConfig = {
-  importStatement: "import i18next from 'i18next';",
-  callStatement: 'i18next.t',
-  exclude: [],
-  outDir: './',
-};
+const NODE_TYPE = {
+  JSX: 'jsx',
+  TEMPLATE: 'template',
+  STRING: 'string',
+  JSX_ATTRIBUTE: 'JSXAttribute',
+  CALL_EXPRESSION: 'CallExpression'
+}
 
 module.exports = {
-  defaultConfig,
-};
+  NODE_TYPE
+}

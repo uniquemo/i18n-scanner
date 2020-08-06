@@ -1,11 +1,12 @@
 {
   "importStatement": "import { t } from 'share/i18next/i18next';",
   "callStatement": "t",
-  "input": "packages/share/common/**/*.{js,jsx,ts,tsx}",
+  "input": "app/test.tsx",
   "exclude": [
     "packages/**/*.spec.{js,jsx,ts,tsx}",
     "packages/**/*.{json,svg,md}",
     "packages/share/common/EmojiDropdown/*.js",
     "node_modules/**"
-  ]
+  ],
+  "chdir": "../../work/coding/coding-frontend-layout"
 }

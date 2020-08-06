@@ -1,210 +1,225 @@
-const p = require('path');
-const glob = require('glob');
-const fs = require('fs');
-const parser = require('@babel/parser');
-const traverse = require('@babel/traverse').default;
-const get = require('lodash/get');
+const path = require('path')
+const glob = require('glob')
+const fs = require('fs')
+const parser = require('@babel/parser')
+const traverse = require('@babel/traverse').default
 
-const { hasCNChar, configHandler } = require('./utils');
-const { i18nFnWrapperGenerator } = require('./fnGenerator');
+const { readFile, writeFile } = require('./utils/file')
+const { hasCNChar } = require('./utils/is')
+const { configHandler } = require('./utils/config')
+const { genNodeLocation } = require('./utils/node')
+const { i18nFnWrapperGenerator } = require('./fnGenerator')
+const { NODE_TYPE } = require('./constant')
 
-// 设置配置文件
-const {
-  input = 'packages/**/*.{js,jsx,ts,tsx}',
-  exclude = [],
-  outDir,
-  callStatement,
-  importStatement,
-} = configHandler();
+const { JSX, TEMPLATE, STRING, JSX_ATTRIBUTE, CALL_EXPRESSION } = NODE_TYPE
 
-process.chdir('../vcs-frontend');
+// 修改当前工作目录
+process.chdir(configHandler().chdir)
 
-// 存储匹配到的包含中文字符串及路径行号等信息
-const texts = [];
-// 存储匹配到的包含中文字符的节点信息
-const textMap = new Map();
-const root = process.cwd();
+/**
+ * texts: ['text#type#filePath#row#col']
+ * textMap: {
+ *   text: {
+ *     message: text,
+ *     source: [
+ *       {
+ *         type,
+ *         location: 'filePath#row#col',
+ *         isWrapped: true/false
+ *       }
+ *     ]
+ *   }
+ * }
+ */
+class I18nScanner {
+  constructor() {
+    this.config = configHandler()
+    this.texts = []
+    this.textMap = new Map()
+    this.root = process.cwd()
+  }
 
-const readFile = (path) => 
-  new Promise((resolve, reject) => {
-    fs.readFile(path, 'utf-8', (err, content) => {
-      if (err) return reject(err);
-      resolve({ filePath: path, content });
-    });
-  });
+  getInputFilesContent = async () => {
+    const { input, exclude } = this.config
 
-// 读取 input 中的文件
-const start = () =>
-  new Promise((resolve, reject) => {
-    glob(
-      input,
-      {
-        cwd: root,
-        ignore: exclude,
-      },
-      (err, files = []) => {
-        if (err) {
-          return reject(err);
-        }
-        resolve(
+    return new Promise((resolve, reject) => {
+      glob(
+        input,
+        {
+          cwd: this.root,
+          ignore: exclude,
+        },
+        (err, files = []) => {
+          if (err) return reject(err)
           // 返回所有文件路径和内容
-          Promise.all(
-            files
-              .filter(file => !file.includes('node_modules'))
-              .map(async (file) => await readFile(file))
+          resolve(
+            Promise.all(
+              files
+                .filter(file => !file.includes('node_modules'))
+                .map(async (file) => await readFile(file))
+            )
           )
-        );
-      }
-    );
-  });
-
-const detectChinese = (node, filePath, type) => {
-  let val = node.value;
-
-  // type: TemplateElement 
-  if (val && typeof val === 'object') {
-    val = val.cooked;
-  }
-  if (!hasCNChar(val)) return;
-
-  const locStart = get(node, ['loc', 'start', 'line'], '!!!');
-  const locEnd = get(node, ['loc', 'end', 'line'], '!!!');
-  const realLine = locStart === locEnd ? locStart : Math.ceil((locStart + locEnd) / 2);
-  const locCol = get(node, ['loc', 'start', 'column'], '!!!');
-  const location = `${p.join(root, filePath)}#${realLine}#${locCol}`;
-
-  val = type === 'jsx' ? val.trim() : val;
-  const sourceText = `${val}#${type}#${location}`;
-  let isExist = false;
-
-  if (
-    ['string', 'template'].includes(type)
-    && texts.find(t => 
-        t === `${val}#string#${location}`
-        || t === `${val}#template#${location}`
-        || t === `${val}#jsx#${location}`
+        }
       )
-  ) {
-      isExist = true;
-  } else if (type === 'jsx' && texts.indexOf(`${val}#jsx#${location}`) > -1) {
-      isExist = true;
+    })
   }
 
-  // 资源没有扫描过
-  if (!isExist) {
-    texts.push(sourceText);
-    // 将文案存入 textMap 中
-    if (textMap.has(val)) {
-      const d = textMap.get(val)
-
-      d.source.push({ type, location });
-      textMap.set(val, d);
-      return;
+  detectChinese = (path, filePath, type) => {
+    const { node, parent } = path
+    let val = node.value
+  
+    // type: TemplateElement 
+    if (val && typeof val === 'object') {
+      val = val.cooked
     }
-    textMap.set(val, {
-      message: val,
-      source: [
-        { type, location },
-      ],
-    });
+  
+    if (!hasCNChar(val)) return
+
+    val = val.trim()
+    const location = genNodeLocation(node, filePath)
+    const sourceText = `${val}#${type}#${location}`
+    let isExisted = false
+  
+    if (
+      [STRING, TEMPLATE].includes(type) &&
+      this.texts.find(t =>
+        t === `${val}#${STRING}#${location}` ||
+        t === `${val}#${TEMPLATE}#${location}` ||
+        t === `${val}#${JSX}#${location}`
+      )
+    ) {
+      isExisted = true
+    } else if (type === JSX && this.texts.indexOf(`${val}#${JSX}#${location}`) > -1) {
+      isExisted = true
+    }
+
+    // 判断是否已经包裹了i18n方法
+    let isWrapped = false
+    if (
+      type === STRING &&
+      parent.type === CALL_EXPRESSION &&
+      (
+        parent.callee.name === this.config.callStatement ||
+        (parent.callee.property && parent.callee.property.name === this.config.callStatement)
+      )
+    ) {
+      isWrapped = true
+    }
+  
+    if (!isExisted) {
+      this.texts.push(sourceText)
+      if (this.textMap.has(val)) {
+        const d = this.textMap.get(val)
+  
+        d.source.push({ type, location, isWrapped })
+        this.textMap.set(val, d)
+        return
+      }
+      this.textMap.set(val, {
+        message: val,
+        source: [
+          { type, location, isWrapped }
+        ]
+      })
+    }
   }
-};
 
-const parse = ({ filePath, content }) => {
-  const ast = parser.parse(content, {
-    sourceType: 'module',
-    plugins: [
-      'jsx',
-      'typescript',
-      'objectRestSpread',
-      'dynamicImport',
-      'decorators-legacy',
-      'exportDefaultFrom',
-      'exportNamespaceFrom',
-      'asyncGenerators',
-      'classPrivateMethods',
-      'classPrivateProperties',
-      'classProperties',
-    ],
-  });
+  parse = ({ filePath, content }) => {
+    const ast = parser.parse(content, {
+      sourceType: 'module',
+      plugins: [
+        'jsx',
+        'typescript',
+        'objectRestSpread',
+        'dynamicImport',
+        'decorators-legacy',
+        'exportDefaultFrom',
+        'exportNamespaceFrom',
+        'asyncGenerators',
+        'classPrivateMethods',
+        'classPrivateProperties',
+        'classProperties',
+      ]
+    })
+  
+    traverse(
+      ast,
+      {
+        JSXText: (path) => {
+          this.detectChinese(path, filePath, JSX)
+        },
+        'TemplateLiteral|TemplateElement': (path) => {
+          this.detectChinese(path, filePath, TEMPLATE)
+        },
+        StringLiteral: (path) => {
+          const { parent = {} } = path
+          this.detectChinese(path, filePath, parent.type === JSX_ATTRIBUTE ? JSX : STRING)
+        }
+      }
+    )
+  }
 
-  traverse(
-    ast,
-    {
-      JSXText(path) {
-        detectChinese(path.node, filePath, 'jsx');
-      },
-      'TemplateLiteral|TemplateElement'(path) {
-        detectChinese(path.node, filePath, 'template');
-      },
-      StringLiteral(path) {
-        const { node, parent = {} } = path;
-
-        detectChinese(node, filePath, parent.type === 'JSXAttribute' ? 'jsx' : 'string');
-      },
-    }
-  );
-};
-
-start()
-  .catch((err) => { throw new Error('err') })
-  .then((files) => {
+  genTranslationFile = (files) => {
     for (let file of files) {
-      parse(file)
+      this.parse(file)
     }
+  
+    console.log('Total text count is: ', this.textMap.size)
+    const zhJson = [...this.textMap.values()].reduce((json, item) => {
+      json[item.message] = item.message
+      return json
+    }, {})
+  
+    fs.writeFileSync(
+      path.join(this.root, this.config.outDir, 'translation.json'),
+      JSON.stringify(zhJson, null, 2)
+    )
+  }
 
-    return [...textMap.values()];
-  })
-  .then((messages) => {
-    // 生成文案映射文件
-    console.log(textMap.size)
-    const zhJson = messages.reduce((total, item) => {
-      total[item.message] = item.message;
-      return total;
-    }, {});
+  insertImportStatement = async (filePath) => {
+    try {
+      const { content } = await readFile(filePath)
+      await writeFile(filePath, `${this.config.importStatement}\n${content}`)
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
-    fs.writeFileSync(p.join(root, outDir, 'translation.json'), JSON.stringify(zhJson, null, '\t'));
-  })
-  .then(() => {
-    const needImport = [];
+  wrapWithI18nFn = () => {
+    const needImport = []
 
-    // 替换中文文案, 将文案用i18n方法包裹
-    textMap.forEach((item) => {
+    // 将文案用i18n方法包裹
+    this.textMap.forEach((item) => {
       item.source.forEach((src) => {
-        const [filename, line, column] = src.location.split('#')
+        const [filePath, line, column] = src.location.split('#')
         const shouldImport = i18nFnWrapperGenerator({
-          filename,
+          filePath,
           line,
           column,
           message: item.message,
           type: src.type,
-          callStatement,
-          importStatement,
-        });
+          isWrapped: src.isWrapped,
+          callStatement: this.config.callStatement,
+          importStatement: this.config.importStatement
+        })
 
-        if (shouldImport) needImport.push(filename);
+        if (shouldImport) needImport.push(filePath)
       })
     })
 
-    // 这里加上文件头的import
-    needImport.forEach(src => {
-      fs.readFile(src, 'utf8', (err, data) => {
-          if (err) return console.log(err);
+    // 加上文件头的importStatement
+    needImport.forEach(src => this.insertImportStatement(src))
+  }
 
-          const result = `${importStatement}\n${data}`;
-          fs.writeFile(src, result, 'utf8', e => {
-              if (e) return console.log(e);
-              return;
-          });
-          return;
-      });
-    });
+  start = async () => {
+    try {
+      const files = await this.getInputFilesContent()
+      this.genTranslationFile(files)
+      this.wrapWithI18nFn()
+    } catch(err) {
+      console.log(err)
+    }
+  }
+}
 
-  })
-  .catch(e => {
-    console.log(e)
-  })
-
-module.exports = {
-  start,
-};
+new I18nScanner().start()

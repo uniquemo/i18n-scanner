@@ -1,92 +1,66 @@
-const fs = require('fs');
+const fs = require('fs')
 
-const replace = (text, chinese, replaceString) => {
-  let textArr = text.split(/i18next\.t\(.+?\)/);
-  const newArr = JSON.parse(JSON.stringify(textArr));
-
-  textArr.forEach((item, index, arr) => {
-      arr[index] = item.replace(chinese, replaceString);
-  });
-
-  newArr.forEach((item, index, arr) => {
-      if (item !== textArr[index]) {
-          text = text.replace(item, textArr[index]);
-      }
-  })
-  return text;
+const replace = (lineText, chinese, replaceString) => {
+  lineText = lineText.replace(chinese, replaceString)
+  return lineText
 }
 
 const i18nFnWrapperGenerator = (source = {}) => {
-  const { message, type, filename, line, importStatement, callStatement, } = source;
+  const {
+    type,
+    line,
+    message,
+    filePath,
+    isWrapped,
+    importStatement,
+    callStatement
+  } = source
 
-  let left = type === 'jsx' ? '{' : '';
-  let right = type === 'jsx' ? '}' : '';
+  let left = type === 'jsx' ? '{' : ''
+  let right = type === 'jsx' ? '}' : ''
 
-  // 替换模板字符串
   if (type === 'template') {
-    left = '${';
-    right = '}';
+    left = '${'
+    right = '}'
   }
 
-  const data = fs.readFileSync(filename, 'utf8');
-  const arr = data.split('\n');
+  const content = fs.readFileSync(filePath, 'utf-8')
+  const arr = content.split('\n')
 
-  const temp1 = arr[line - 1];
-  const temp2 = arr[line];
-  const replaceString = `${left}${callStatement}('${message}')${right}`;
-  let chinese = message.replace(/\\"/g, '"');
+  const temp = arr[line - 1]
+  const replaceString = `${left}${callStatement}('${message}')${right}`
+  let chinese = message.replace(/\\"/g, '"')
 
-  // 判断是否已经用i18n函数包裹了
-  const v1 = replace(arr[line - 1], `${callStatement}('${message}')`, '!!!')
-  const v2 = replace(arr[line], `${callStatement}('${message}')`, '!!!')
-  if (temp1 !== v1 || temp2 !== v2) {
-    let result = arr.join('\n');
-
-    fs.writeFileSync(filename, result, 'utf8');
+  const checkIfNeedImport = () => {
+    let result = arr.join('\n')
+    fs.writeFileSync(filePath, result, 'utf-8')
 
     if (arr.indexOf(importStatement) === -1) {
-      // 代表是否需要在头部引入 i18next
-      return true;
+      // 是否需要在头部引入importStatement
+      return true
     }
-    return
   }
 
-  // 这里是为了匹配前后如果有引号的情况
-  arr[line - 1] = replace(arr[line - 1], `"${chinese}"`, replaceString);
-  if (temp1 === arr[line - 1]) {
-      arr[line - 1] = replace(arr[line - 1], `'${chinese}'`, replaceString);
-      if (temp1 === arr[line - 1]) {
-          arr[line - 1] = replace(arr[line - 1], chinese, replaceString);
-          if (temp1 === arr[line - 1]) {
-              arr[line] = replace(arr[line], `"${chinese}"`, replaceString);
-              if (temp2 === arr[line]) {
-                  arr[line] = replace(arr[line], `'${chinese}'`, replaceString);
-                  if (temp2 === arr[line]) {
-                      arr[line] = replace(arr[line], chinese, replaceString);
-                      if (temp2 === arr[line]) {
-                          if (
-                            arr[line].indexOf(message) !== -1
-                              || arr[line - 1].indexOf(message) !== -1
-                          ) {
-                              console.log('失败，请手动替换', JSON.stringify(source, null, "\t"));
-                              return 0;
-                          }
-                      }
-                  }
-              }
-          }
+  // 判断是否已经用i18n函数包裹了
+  if (isWrapped) {
+    return checkIfNeedImport()
+  }
+
+  // 匹配前后如果有引号的情况
+  arr[line - 1] = replace(arr[line - 1], `"${chinese}"`, replaceString)
+  if (temp === arr[line - 1]) {
+    arr[line - 1] = replace(arr[line - 1], `'${chinese}'`, replaceString)
+    if (temp === arr[line - 1]) {
+      arr[line - 1] = replace(arr[line - 1], chinese, replaceString)
+      if (temp === arr[line - 1] && arr[line - 1].indexOf(message) !== -1) {
+        console.log('失败，请手动替换', JSON.stringify(source, null, 2))
+        return false
       }
+    }
   }
 
-  let result = arr.join('\n');
-
-  fs.writeFileSync(filename, result, 'utf8');
-
-  if (arr.indexOf(importStatement) === -1) {
-    // 代表是否需要在头部引入 i18next 
-    return true;
-  }
-};
+  return checkIfNeedImport()
+}
 
 module.exports = {
   i18nFnWrapperGenerator,
